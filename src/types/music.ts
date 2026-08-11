@@ -15,3 +15,12 @@ export interface PlayerState {
   volume: number;
   isLoading: boolean;
 }
+
+export interface EditorSettings {
+  gain: number;
+  fadeIn: number;
+  fadeOut: number;
+  playbackRate: number;
+  trimStart: number;
+  trimEnd: number;
+}

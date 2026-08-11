@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Track, PlayerState } from '../types/music';
+import { EditorSettings, PlayerState, Track } from '../types/music';
 
-export const useAudioPlayer = () => {
+export const useAudioPlayer = (editorSettings: EditorSettings) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playerState, setPlayerState] = useState<PlayerState>({
     isPlaying: false,
@@ -15,7 +15,33 @@ export const useAudioPlayer = () => {
     const audio = audioRef.current;
     if (!audio) return;
 
+    audio.volume = Math.min(playerState.volume * editorSettings.gain, 1);
+    audio.playbackRate = editorSettings.playbackRate;
+  }, [editorSettings.gain, editorSettings.playbackRate, playerState.volume]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
     const updateTime = () => {
+      const trimEnd = editorSettings.trimEnd || playerState.currentTrack?.duration || 0;
+      const fadeInVolume = editorSettings.fadeIn > 0
+        ? Math.min((audio.currentTime - editorSettings.trimStart) / editorSettings.fadeIn, 1)
+        : 1;
+      const fadeOutVolume = editorSettings.fadeOut > 0 && trimEnd > 0
+        ? Math.min((trimEnd - audio.currentTime) / editorSettings.fadeOut, 1)
+        : 1;
+      const shapedVolume = Math.max(0, Math.min(fadeInVolume, fadeOutVolume));
+
+      audio.volume = Math.min(playerState.volume * editorSettings.gain * shapedVolume, 1);
+
+      if (trimEnd > 0 && audio.currentTime >= trimEnd) {
+        audio.pause();
+        audio.currentTime = editorSettings.trimStart;
+        setPlayerState(prev => ({ ...prev, isPlaying: false, currentTime: editorSettings.trimStart }));
+        return;
+      }
+
       setPlayerState(prev => ({
         ...prev,
         currentTime: audio.currentTime,
@@ -31,7 +57,7 @@ export const useAudioPlayer = () => {
     };
 
     const handleEnded = () => {
-      setPlayerState(prev => ({ ...prev, isPlaying: false, currentTime: 0 }));
+      setPlayerState(prev => ({ ...prev, isPlaying: false, currentTime: editorSettings.trimStart }));
     };
 
     audio.addEventListener('timeupdate', updateTime);
@@ -45,27 +71,33 @@ export const useAudioPlayer = () => {
       audio.removeEventListener('loadeddata', handleLoadedData);
       audio.removeEventListener('ended', handleEnded);
     };
-  }, []);
+  }, [editorSettings, playerState.currentTrack?.duration, playerState.volume]);
 
   const playTrack = (track: Track) => {
     if (!audioRef.current) return;
+
+    audioRef.current.playbackRate = editorSettings.playbackRate;
 
     if (playerState.currentTrack?.id === track.id) {
       if (playerState.isPlaying) {
         audioRef.current.pause();
         setPlayerState(prev => ({ ...prev, isPlaying: false }));
       } else {
+        if (audioRef.current.currentTime < editorSettings.trimStart) {
+          audioRef.current.currentTime = editorSettings.trimStart;
+        }
         audioRef.current.play();
         setPlayerState(prev => ({ ...prev, isPlaying: true }));
       }
     } else {
       audioRef.current.src = track.url;
+      audioRef.current.currentTime = editorSettings.trimStart;
       audioRef.current.play();
       setPlayerState(prev => ({
         ...prev,
         currentTrack: track,
         isPlaying: true,
-        currentTime: 0,
+        currentTime: editorSettings.trimStart,
       }));
     }
   };
@@ -86,7 +118,7 @@ export const useAudioPlayer = () => {
 
   const setVolume = (volume: number) => {
     if (audioRef.current) {
-      audioRef.current.volume = volume;
+      audioRef.current.volume = Math.min(volume * editorSettings.gain, 1);
       setPlayerState(prev => ({ ...prev, volume }));
     }
   };
