@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "copilot_cli_mcp": {
+      "enabled": true
+    }
+  }
+}
